@@ -1,17 +1,31 @@
 
+use std::default::Default;
 use std::env;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{Write, LineWriter, BufReader, BufRead};
 use std::path::{Path, PathBuf};
 use std::process::{Command, exit};
+use confy;
 use die::die;
+use serde::{Serialize, Deserialize};
 use glob;
+
+#[derive(Serialize, Deserialize)]
+struct Config
+{
+    editor_executable: String
+}
+impl Default for Config
+{
+    fn default() -> Config { Config { editor_executable: "vim".to_owned() }}
+}
 
 struct Arguments
 {
     patterns: Vec::<String>,
     editor_executable: Option<String>,
+    set_editor_executable: Option<String>,
     usage: bool
 }
 
@@ -24,18 +38,29 @@ struct FileToRename
 
 fn main()
 {
+    let mut config = confy::load::<Config>("brn").unwrap_or(Config::default());
     let args = parse_arguments();
     if args.usage == true
     {
         print_usage();
         exit(0);
     }
+    if let Some(x) = &args.set_editor_executable
+    {
+        config.editor_executable = x.to_owned();
+        confy::store("brn", &config).unwrap_or_else(
+            |_| die!("Unable to save config file.")
+        );
+        println!("Editor set to '{}'.", config.editor_executable);
+        exit(0);
+    }
+
     let mut files = list_files(&args);
     handle_degenerate_cases(&args, &files);
 
     let buffer_filename = std::env::temp_dir().join(".brn_buffer");
     write_filenames_to_buffer(&buffer_filename, &files);
-    invoke_editor(&args, &buffer_filename);
+    invoke_editor(&config, &args, &buffer_filename);
     read_filenames_from_buffer(&buffer_filename, &mut files);
 
     execute_rename(&files);
@@ -57,10 +82,12 @@ fn parse_arguments() -> Arguments
     {
         patterns: Vec::new(),
         editor_executable: None,
+        set_editor_executable: None,
         usage: false
     };
     let mut force_patterns = false;
     let mut next_is_editor_executable = false;
+    let mut next_is_set_editor_executable = false;
 
     for arg in env::args().skip(1)
     {
@@ -69,6 +96,12 @@ fn parse_arguments() -> Arguments
             result.editor_executable = Some(arg);
             next_is_editor_executable = false;
         }
+        else if next_is_set_editor_executable == true
+        {
+            result.set_editor_executable = Some(arg.to_owned());
+            result.editor_executable = Some(arg.to_owned());
+            next_is_set_editor_executable = false;
+        }
         else if arg.starts_with("--") == true && force_patterns == false
         {
             match arg.as_str()
@@ -76,6 +109,7 @@ fn parse_arguments() -> Arguments
                 "--usage" => result.usage = true,
                 "--help" => result.usage = true,
                 "--editor" => next_is_editor_executable = true,
+                "--set-editor" => next_is_set_editor_executable = true,
                 "--" => force_patterns = true,
                 _ => die!("Don't understand argument {}.", arg)
             }
@@ -86,14 +120,27 @@ fn parse_arguments() -> Arguments
         }
     }
 
-    if next_is_editor_executable == true
+    if next_is_editor_executable == true ||
+        next_is_set_editor_executable == true
     {
         result.usage = true;
     }
 
-    if result.patterns.len() == 0
+    if result.set_editor_executable != None
     {
-        result.usage = true;
+        // require that no globs were provided
+        if result.patterns.len() != 0
+        {
+            result.usage = true;
+        }
+    }
+    else
+    {
+        // require that some globs were provided
+        if result.patterns.len() == 0
+        {
+            result.usage = true;
+        }
     }
 
     result
@@ -191,12 +238,12 @@ fn write_filenames_to_buffer(buffer_filename: &Path, files: &Vec<FileToRename>)
     }
 }
 
-fn invoke_editor(args: &Arguments, buffer_filename: &Path)
+fn invoke_editor(config: &Config, args: &Arguments, buffer_filename: &Path)
 {
-    let editor = match &args.editor_executable
+    let editor: &str = match &args.editor_executable
     {
-        Some(e) => e,
-        None => "vim"
+        Some(e) => &e,
+        None => &config.editor_executable
     };
 
     let status = Command::new(editor)

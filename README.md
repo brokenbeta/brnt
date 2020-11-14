@@ -8,7 +8,7 @@ Rename files using your text editor of choice.
 
 # TODO
 
-* save editor to a config file
+* ~~save editor to a config file~~
 * flag to include/omit extension in the text file
 * handle situation where files must be renamed in certain order to avoid files clashing mid-process
 * detect invalid situations:
