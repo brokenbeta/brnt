@@ -10,7 +10,8 @@ use glob;
 
 struct Arguments
 {
-    patterns: Vec::<String>
+    patterns: Vec::<String>,
+    usage: bool
 }
 
 struct FileToRename
@@ -23,6 +24,11 @@ struct FileToRename
 fn main()
 {
     let args = parse_arguments();
+    if args.usage == true
+    {
+        print_usage();
+        exit(0);
+    }
     let mut files = list_files(&args);
 
     let buffer_filename = std::env::temp_dir().join(".brn_buffer");
@@ -34,12 +40,39 @@ fn main()
     println!("{} files renamed.", files.len());
 }
 
+fn print_usage()
+{
+    println!("brn");
+    println!("");
+    println!("    brn [globs]");
+    println!("    brn -- [globs]");
+    println!("");
+}
+
 fn parse_arguments() -> Arguments
 {
-    Arguments
+    let mut result = Arguments { patterns: Vec::new(), usage: false };
+    let mut force_patterns = false;
+
+    for arg in env::args().skip(1)
     {
-        patterns: env::args().skip(1).collect()
+        if arg.starts_with("--") == true && force_patterns == false
+        {
+            match arg.as_str()
+            {
+                "--usage" => result.usage = true,
+                "--help" => result.usage = true,
+                "--" => force_patterns = true,
+                _ => die!("Don't understand argument {}.", arg)
+            }
+        }
+        else
+        {
+            result.patterns.push(arg);
+        }
     }
+
+    result
 }
 
 fn list_files(args: &Arguments) -> Vec<FileToRename>
