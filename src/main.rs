@@ -7,7 +7,7 @@ use std::io::{Write, LineWriter, BufReader, BufRead};
 use std::path::{Path, PathBuf};
 use std::process::{Command, exit};
 use confy;
-use die::die;
+use colored::*;
 use serde::{Serialize, Deserialize};
 use glob;
 
@@ -62,6 +62,15 @@ enum ActionWhenStuckRollingBack
     Retry,
     Skip,
     AbortRollback
+}
+
+macro_rules! die
+{
+    ($($arg:expr),+) => {{
+        print!("{}", "ERROR. ".red());
+        println!($($arg), +);
+        exit(1);
+    }}
 }
 
 fn main()
@@ -361,29 +370,31 @@ fn read_filenames_from_buffer(buffer_filename: &Path, files: &mut Vec<FileToRena
 
 fn ask_what_to_do_when_stuck(stuck_at_file: &FileToRename) -> ActionWhenStuck
 {
-    println!("Unable to rename \"{}\".", stuck_at_file.full_path.display());
-    print!("  [R]etry | [S]kip | [A]bort | roll[B]ack: ");
+    let friendly_name = &stuck_at_file.full_path.file_name().unwrap().to_str().unwrap();
+
+    println!("{} Can't rename '{}'.", "HALT. ".yellow(), friendly_name.yellow());
+    println!("       {}{}", "r".bright_cyan(), ": Retry".cyan());
+    println!("       {}{}", "s".bright_cyan(), ": Skip this file".cyan());
+    println!("       {}{}", "a".bright_cyan(), ": Abort here".cyan());
+    println!("       {}{}", "u".bright_cyan(), ": Undo all".cyan());
+    print!("{}", "       [r/s/u/a]: ".blue());
     std::io::stdout().flush().unwrap();
+    let mut key: char = '_';
     let mut action = None::<ActionWhenStuck>;
     while action == None
     {
-        action = match getch::Getch::new().getch()
+        let getch_result = getch::Getch::new().getch();
+        if let Ok(k) = getch_result { key = k as char };
+        action = match getch_result
         {
             Ok(b'r') | Ok(b'R') => Some(ActionWhenStuck::Retry),
             Ok(b's') | Ok(b'S') => Some(ActionWhenStuck::Skip),
             Ok(b'a') | Ok(b'A') => Some(ActionWhenStuck::Abort),
-            Ok(b'b') | Ok(b'B') => Some(ActionWhenStuck::Rollback),
+            Ok(b'u') | Ok(b'U') => Some(ActionWhenStuck::Rollback),
             _ => None
         };
     }
-    match action
-    {
-        Some(ActionWhenStuck::Retry) => println!("retry"),
-        Some(ActionWhenStuck::Skip) => println!("skip"),
-        Some(ActionWhenStuck::Abort) => println!("abort"),
-        Some(ActionWhenStuck::Rollback) => println!("rollback"),
-        _ => println!("")
-    }
+    println!("{}", key);
     action.unwrap()
 }
 
@@ -391,13 +402,21 @@ fn ask_what_to_do_when_stuck_rolling_back(
     stuck_at_file: &FileToRename
 ) -> ActionWhenStuckRollingBack
 {
-    println!("Unable to rollback rename \"{}\".", stuck_at_file.full_path.display());
-    print!("  [R]etry | [S]kip | [A]bort: ");
+    let friendly_name = &stuck_at_file.full_path.file_name().unwrap().to_str().unwrap();
+    
+    println!("{} Can't undo rename '{}'.", "HALT. ".yellow(), friendly_name.yellow());
+    println!("       {}{}", "r".bright_cyan(), ": Retry".cyan());
+    println!("       {}{}", "s".bright_cyan(), ": Skip this file".cyan());
+    println!("       {}{}", "a".bright_cyan(), ": Abort here".cyan());
+    print!("{}", "       [r/s/u]: ".blue());
     std::io::stdout().flush().unwrap();
+    let mut key: char = '_';
     let mut action = None::<ActionWhenStuckRollingBack>;
     while action == None
     {
-        action = match getch::Getch::new().getch()
+        let getch_result = getch::Getch::new().getch();
+        if let Ok(k) = getch_result { key = k as char };
+        action = match getch_result
         {
             Ok(b'r') | Ok(b'R') => Some(ActionWhenStuckRollingBack::Retry),
             Ok(b's') | Ok(b'S') => Some(ActionWhenStuckRollingBack::Skip),
@@ -405,13 +424,7 @@ fn ask_what_to_do_when_stuck_rolling_back(
             _ => None
         };
     }
-    match action
-    {
-        Some(ActionWhenStuckRollingBack::Retry) => println!("retry"),
-        Some(ActionWhenStuckRollingBack::Skip) => println!("skip"),
-        Some(ActionWhenStuckRollingBack::AbortRollback) => println!("abort"),
-        _ => println!("")
-    }
+    println!("{}", key);
     action.unwrap()
 }
 
@@ -425,10 +438,13 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
         }
         else
         {
-            let extension = file.full_path.extension().unwrap();
+            let extension = file.full_path.extension();
             let mut new_name = file.filename_after.to_owned();
-            new_name.push(".");
-            new_name.push(extension);
+            if let Some(e) = extension
+            {
+                new_name.push(".");
+                new_name.push(e);
+            }
             new_name
         }
     };
@@ -481,6 +497,8 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
 
     if rollback == true
     {
+        println!("Undoing renames...");
+
         index = 0;
         while index < files.len()
         {
@@ -524,13 +542,20 @@ fn print_state(files: &Vec<FileToRename>)
         }
     }
 
-    println!("{} files renamed.", renamed);
+    if unchanged == 0
+    {
+        println!("{}  renamed             ... {}", "DONE.".green(), renamed);
+    }
+    else
+    {
+        println!("{}  renamed             ... {}", "DONE.".yellow(), renamed);
+    }
     if noop > 0
     {
-        println!("{} files ignored (name was unchanged).", noop);
+        println!("       skipped (no change) ... {}", noop);
     }
     if unchanged > 0
     {
-        println!("{} files not renamed.", unchanged);
+        println!("       skipped (problem)   ... {}", unchanged);
     }
 }
