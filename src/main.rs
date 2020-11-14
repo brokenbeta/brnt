@@ -26,6 +26,8 @@ struct Arguments
     patterns: Vec::<String>,
     editor_executable: Option<String>,
     set_editor_executable: Option<String>,
+    include_extensions: bool,
+    dry_run: bool,
     usage: bool
 }
 
@@ -63,7 +65,7 @@ fn main()
     invoke_editor(&config, &args, &buffer_filename);
     read_filenames_from_buffer(&buffer_filename, &mut files);
 
-    execute_rename(&files);
+    execute_rename(&args, &files);
     println!("{} files renamed.", files.len());
 }
 
@@ -83,6 +85,8 @@ fn parse_arguments() -> Arguments
         patterns: Vec::new(),
         editor_executable: None,
         set_editor_executable: None,
+        include_extensions: false,
+        dry_run: false,
         usage: false
     };
     let mut force_patterns = false;
@@ -110,8 +114,18 @@ fn parse_arguments() -> Arguments
                 "--help" => result.usage = true,
                 "--editor" => next_is_editor_executable = true,
                 "--set-editor" => next_is_set_editor_executable = true,
+                "--include-extensions" => result.include_extensions = true,
+                "--dry-run" => result.dry_run = true,
                 "--" => force_patterns = true,
-                _ => die!("Don't understand argument {}.", arg)
+                _ => die!("Don't understand option {}.", arg)
+            }
+        }
+        else if arg.starts_with("-") == true && force_patterns == false
+        {
+            match arg.as_str()
+            {
+                "-x" => result.include_extensions = true,
+                _ => die!("Don't understand option {}.", arg)
             }
         }
         else
@@ -177,12 +191,17 @@ fn list_files(args: &Arguments) -> Vec<FileToRename>
                 }
             };
 
+            let relevant_part_of_file_name =
+                if args.include_extensions { path.file_name() } else { path.file_stem() };
+
+            let relevant_part_of_file_name = relevant_part_of_file_name.unwrap_or_else(
+                || die!("Unable to get file name out of path.")
+            );
+
             filenames.push(FileToRename
             {
                 full_path: path.to_owned(),
-                filename_before: path.file_name().unwrap_or_else(
-                    || die!("Unable to get file name out of path.")
-                ).to_owned(),
+                filename_before: relevant_part_of_file_name.to_owned(),
                 filename_after: OsString::new()
             });
         }
@@ -234,7 +253,12 @@ fn write_filenames_to_buffer(buffer_filename: &Path, files: &Vec<FileToRename>)
 
     for file in files
     {
-        write!(&mut writer, "{}\n", file.filename_before.to_str().unwrap()).unwrap();
+        let filename_before = file.filename_before.to_str().unwrap_or_else(
+            || die!("Unable to get string for filename.")
+        );
+        write!(&mut writer, "{}\n", filename_before).unwrap_or_else(
+            |_| die!("Unable to write filenames to buffer file.")
+        );
     }
 }
 
@@ -308,13 +332,31 @@ fn read_filenames_from_buffer(buffer_filename: &Path, files: &mut Vec<FileToRena
     }
 }
 
-fn execute_rename(files: &Vec<FileToRename>)
+fn execute_rename(args: &Arguments, files: &Vec<FileToRename>)
 {
     for file in files
     {
-        let path_afterwards = file.full_path.parent().unwrap().join(
-            &file.filename_after
-        );
-        fs::rename(&file.full_path, path_afterwards).unwrap();
+        let file_name = if args.include_extensions == true
+        {
+            file.filename_after.to_owned()
+        }
+        else
+        {
+            let extension = file.full_path.extension().unwrap();
+            let mut new_name = file.filename_after.to_owned();
+            new_name.push(".");
+            new_name.push(extension);
+            new_name
+        };
+
+        let final_path = file.full_path.with_file_name(file_name);
+        if args.dry_run == true
+        {
+            println!("{} -> {}", file.full_path.display(), final_path.display());
+        }
+        else
+        {
+            fs::rename(&file.full_path, final_path).unwrap();
+        }
     }
 }
