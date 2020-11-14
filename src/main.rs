@@ -123,11 +123,6 @@ fn list_files(args: &Arguments) -> Vec<FileToRename>
         1 => die!(
             "Unable to create glob from argument #{}.", invalid_indices[0]
         ),
-        2 => die!(
-            "Unable to create glob from arguments #{} and #{}.",
-            invalid_indices[0],
-            invalid_indices[1]
-        ),
         _ => {
             let string_indices: Vec<String> =
                 invalid_indices.iter().map(|n| format!("#{}", n)).collect();
