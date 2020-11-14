@@ -11,6 +11,7 @@ use glob;
 struct Arguments
 {
     patterns: Vec::<String>,
+    editor_executable: Option<String>,
     usage: bool
 }
 
@@ -30,10 +31,11 @@ fn main()
         exit(0);
     }
     let mut files = list_files(&args);
+    handle_degenerate_cases(&args, &files);
 
     let buffer_filename = std::env::temp_dir().join(".brn_buffer");
     write_filenames_to_buffer(&buffer_filename, &files);
-    invoke_editor(&buffer_filename);
+    invoke_editor(&args, &buffer_filename);
     read_filenames_from_buffer(&buffer_filename, &mut files);
 
     execute_rename(&files);
@@ -51,17 +53,29 @@ fn print_usage()
 
 fn parse_arguments() -> Arguments
 {
-    let mut result = Arguments { patterns: Vec::new(), usage: false };
+    let mut result = Arguments
+    {
+        patterns: Vec::new(),
+        editor_executable: None,
+        usage: false
+    };
     let mut force_patterns = false;
+    let mut next_is_editor_executable = false;
 
     for arg in env::args().skip(1)
     {
-        if arg.starts_with("--") == true && force_patterns == false
+        if next_is_editor_executable == true
+        {
+            result.editor_executable = Some(arg);
+            next_is_editor_executable = false;
+        }
+        else if arg.starts_with("--") == true && force_patterns == false
         {
             match arg.as_str()
             {
                 "--usage" => result.usage = true,
                 "--help" => result.usage = true,
+                "--editor" => next_is_editor_executable = true,
                 "--" => force_patterns = true,
                 _ => die!("Don't understand argument {}.", arg)
             }
@@ -70,6 +84,16 @@ fn parse_arguments() -> Arguments
         {
             result.patterns.push(arg);
         }
+    }
+
+    if next_is_editor_executable == true
+    {
+        result.usage = true;
+    }
+
+    if result.patterns.len() == 0
+    {
+        result.usage = true;
     }
 
     result
@@ -136,6 +160,22 @@ fn list_files(args: &Arguments) -> Vec<FileToRename>
     }
 }
 
+fn handle_degenerate_cases(args: &Arguments, files: &Vec<FileToRename>)
+{
+    if files.len() == 0
+    {
+        if args.patterns.len() == 1
+        {
+            println!("No files matched glob.");
+        }
+        else
+        {
+            println!("No files matched any of those globs.");
+        }
+        exit(0);
+    }
+}
+
 fn write_filenames_to_buffer(buffer_filename: &Path, files: &Vec<FileToRename>)
 {
     let buffer_file = match File::create(&buffer_filename)
@@ -151,13 +191,19 @@ fn write_filenames_to_buffer(buffer_filename: &Path, files: &Vec<FileToRename>)
     }
 }
 
-fn invoke_editor(buffer_filename: &Path)
+fn invoke_editor(args: &Arguments, buffer_filename: &Path)
 {
-    let status = Command::new("vim")
+    let editor = match &args.editor_executable
+    {
+        Some(e) => e,
+        None => "vim"
+    };
+
+    let status = Command::new(editor)
         .args(buffer_filename.to_str())
         .status()
         .unwrap_or_else(
-            |_| die!("Failed to spawn editor.")
+            |_| die!("Failed to start editor ({}).", editor)
         );
 
     if status.success() == false
