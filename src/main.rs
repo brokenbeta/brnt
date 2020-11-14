@@ -31,11 +31,37 @@ struct Arguments
     usage: bool
 }
 
+#[derive(PartialEq)]
+enum FileOutcome
+{
+    Renamed,
+    RenameWasNoop,
+    Unchanged
+}
+
 struct FileToRename
 {
     full_path: PathBuf,
     filename_before: OsString,
-    filename_after: OsString
+    filename_after: OsString,
+    outcome: FileOutcome
+}
+
+#[derive(PartialEq)]
+enum ActionWhenStuck
+{
+    Retry,
+    Skip,
+    Abort,
+    Rollback
+}
+
+#[derive(PartialEq)]
+enum ActionWhenStuckRollingBack
+{
+    Retry,
+    Skip,
+    AbortRollback
 }
 
 fn main()
@@ -65,8 +91,8 @@ fn main()
     invoke_editor(&config, &args, &buffer_filename);
     read_filenames_from_buffer(&buffer_filename, &mut files);
 
-    execute_rename(&args, &files);
-    println!("{} files renamed.", files.len());
+    execute_rename(&args, &mut files);
+    print_state(&files);
 }
 
 fn print_usage()
@@ -202,7 +228,8 @@ fn list_files(args: &Arguments) -> Vec<FileToRename>
             {
                 full_path: path.to_owned(),
                 filename_before: relevant_part_of_file_name.to_owned(),
-                filename_after: OsString::new()
+                filename_after: OsString::new(),
+                outcome: FileOutcome::Unchanged
             });
         }
     }
@@ -332,11 +359,67 @@ fn read_filenames_from_buffer(buffer_filename: &Path, files: &mut Vec<FileToRena
     }
 }
 
-fn execute_rename(args: &Arguments, files: &Vec<FileToRename>)
+fn ask_what_to_do_when_stuck(stuck_at_file: &FileToRename) -> ActionWhenStuck
 {
-    for file in files
+    println!("Unable to rename \"{}\".", stuck_at_file.full_path.display());
+    print!("  [R]etry | [S]kip | [A]bort | roll[B]ack: ");
+    std::io::stdout().flush().unwrap();
+    let mut action = None::<ActionWhenStuck>;
+    while action == None
     {
-        let file_name = if args.include_extensions == true
+        action = match getch::Getch::new().getch()
+        {
+            Ok(b'r') | Ok(b'R') => Some(ActionWhenStuck::Retry),
+            Ok(b's') | Ok(b'S') => Some(ActionWhenStuck::Skip),
+            Ok(b'a') | Ok(b'A') => Some(ActionWhenStuck::Abort),
+            Ok(b'b') | Ok(b'B') => Some(ActionWhenStuck::Rollback),
+            _ => None
+        };
+    }
+    match action
+    {
+        Some(ActionWhenStuck::Retry) => println!("retry"),
+        Some(ActionWhenStuck::Skip) => println!("skip"),
+        Some(ActionWhenStuck::Abort) => println!("abort"),
+        Some(ActionWhenStuck::Rollback) => println!("rollback"),
+        _ => println!("")
+    }
+    action.unwrap()
+}
+
+fn ask_what_to_do_when_stuck_rolling_back(
+    stuck_at_file: &FileToRename
+) -> ActionWhenStuckRollingBack
+{
+    println!("Unable to rollback rename \"{}\".", stuck_at_file.full_path.display());
+    print!("  [R]etry | [S]kip | [A]bort: ");
+    std::io::stdout().flush().unwrap();
+    let mut action = None::<ActionWhenStuckRollingBack>;
+    while action == None
+    {
+        action = match getch::Getch::new().getch()
+        {
+            Ok(b'r') | Ok(b'R') => Some(ActionWhenStuckRollingBack::Retry),
+            Ok(b's') | Ok(b'S') => Some(ActionWhenStuckRollingBack::Skip),
+            Ok(b'a') | Ok(b'A') => Some(ActionWhenStuckRollingBack::AbortRollback),
+            _ => None
+        };
+    }
+    match action
+    {
+        Some(ActionWhenStuckRollingBack::Retry) => println!("retry"),
+        Some(ActionWhenStuckRollingBack::Skip) => println!("skip"),
+        Some(ActionWhenStuckRollingBack::AbortRollback) => println!("abort"),
+        _ => println!("")
+    }
+    action.unwrap()
+}
+
+fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
+{
+    let new_filename_for_file = |file: &FileToRename| -> OsString
+    {
+        if args.include_extensions == true
         {
             file.filename_after.to_owned()
         }
@@ -347,16 +430,107 @@ fn execute_rename(args: &Arguments, files: &Vec<FileToRename>)
             new_name.push(".");
             new_name.push(extension);
             new_name
-        };
+        }
+    };
+    let new_path_for_file = |file: &FileToRename| -> PathBuf
+    {
+        file.full_path.with_file_name(new_filename_for_file(file))
+    };
 
-        let final_path = file.full_path.with_file_name(file_name);
-        if args.dry_run == true
+    if args.dry_run == true
+    {
+        for file in files
         {
-            println!("{} -> {}", file.full_path.display(), final_path.display());
+            let new_path = new_path_for_file(&file);
+            println!("{} -> {}", file.full_path.display(), new_path.display());
         }
-        else
+        exit(0);
+    }
+
+    let mut index = 0;
+    let mut rollback = false;
+    while index < files.len()
+    {
+        let mut file = &mut files[index];
+        let new_path = new_path_for_file(file);
+
+        if new_path == file.full_path
         {
-            fs::rename(&file.full_path, final_path).unwrap();
+            file.outcome = FileOutcome::RenameWasNoop;
+            index += 1;
+            continue;
         }
+
+        match fs::rename(&file.full_path, new_path)
+        {
+            Ok(_) => {
+                file.outcome = FileOutcome::Renamed;
+                index += 1;
+            },
+            Err(_) => {
+                match ask_what_to_do_when_stuck(&file)
+                {
+                    ActionWhenStuck::Retry => continue,
+                    ActionWhenStuck::Abort => break,
+                    ActionWhenStuck::Skip => { index += 1; continue }
+                    ActionWhenStuck::Rollback => { rollback = true; break }
+                }
+            }
+        }
+    }
+
+    if rollback == true
+    {
+        index = 0;
+        while index < files.len()
+        {
+            let mut file = &mut files[index];
+            if file.outcome != FileOutcome::Renamed { index += 1; continue; }
+            let new_path = new_path_for_file(file);
+
+            match fs::rename(new_path, &file.full_path)
+            {
+                Ok(_) => {
+                    file.outcome = FileOutcome::Unchanged;
+                    index += 1;
+                    continue
+                },
+                Err(_) => {
+                    match ask_what_to_do_when_stuck_rolling_back(&file)
+                    {
+                        ActionWhenStuckRollingBack::Retry => continue,
+                        ActionWhenStuckRollingBack::AbortRollback => break,
+                        ActionWhenStuckRollingBack::Skip => { index += 1; continue }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn print_state(files: &Vec<FileToRename>)
+{
+    let mut renamed = 0;
+    let mut noop = 0;
+    let mut unchanged = 0;
+
+    for f in files
+    {
+        match f.outcome
+        {
+            FileOutcome::Renamed => renamed += 1,
+            FileOutcome::RenameWasNoop => noop += 1,
+            FileOutcome::Unchanged => unchanged += 1
+        }
+    }
+
+    println!("{} files renamed.", renamed);
+    if noop > 0
+    {
+        println!("{} files ignored (name was unchanged).", noop);
+    }
+    if unchanged > 0
+    {
+        println!("{} files not renamed.", unchanged);
     }
 }

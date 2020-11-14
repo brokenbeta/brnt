@@ -11,3 +11,4 @@ glob = "0.3.0"
 die = "0.2.0"
 confy = "0.4.0"
 serde = { version = "1.0", features = ["derive"] }
+getch = "0.2.1"
