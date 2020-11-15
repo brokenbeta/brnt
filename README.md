@@ -1,15 +1,15 @@
 
-# brn
+# bulkrn
 
 Rename files using your text editor of choice.
 
-    brn
+    bulkrn
         [-e|--editor EDITOR-PATHNAME]
         [-x|--include-extensions]
         [--dry-run]
         SEARCH-PATTERN...
 
-    brn --set-editor EDITOR-PATHNAME
+    bulkrn --set-editor EDITOR-PATHNAME
 
 # TODO
 

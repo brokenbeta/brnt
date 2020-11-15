@@ -75,7 +75,7 @@ macro_rules! die
 
 fn main()
 {
-    let mut config = confy::load::<Config>("brn").unwrap_or(Config::default());
+    let mut config = confy::load::<Config>("bulkrn").unwrap_or(Config::default());
     let args = parse_arguments();
     if args.usage == true
     {
@@ -85,7 +85,7 @@ fn main()
     if let Some(x) = &args.set_editor_executable
     {
         config.editor_executable = x.to_owned();
-        confy::store("brn", &config).unwrap_or_else(
+        confy::store("bulkrn", &config).unwrap_or_else(
             |_| die!("Unable to save config file.")
         );
         println!("Editor set to '{}'.", config.editor_executable);
@@ -95,7 +95,7 @@ fn main()
     let mut files = list_files(&args);
     handle_degenerate_cases(&args, &files);
 
-    let buffer_filename = std::env::temp_dir().join(".brn_buffer");
+    let buffer_filename = std::env::temp_dir().join(".bulkrn_buffer");
     write_filenames_to_buffer(&buffer_filename, &files);
     invoke_editor(&config, &args, &buffer_filename);
     read_filenames_from_buffer(&buffer_filename, &mut files);
@@ -106,10 +106,23 @@ fn main()
 
 fn print_usage()
 {
-    println!("brn");
+    let version = env!("CARGO_PKG_VERSION");
     println!("");
-    println!("    brn [globs]");
-    println!("    brn -- [globs]");
+    println!("bulkrn {}", version);
+    println!("Rename files in bulk using your text editor of choice.");
+    println!("");
+    println!("    bulkrn");
+    println!("        [-e|--editor EDITOR-PATHNAME]");
+    println!("        [-x|--include-extensions]");
+    println!("        [--dry-run]");
+    println!("        SEARCH-PATTERN...");
+    println!("");
+    println!("    bulkrn --set-editor EDITOR-PATHNAME");
+    println!("");
+    println!("bulkrn will collect all the files which match the search patterns provided");
+    println!("into a list, then display that list in your text editor of your choosing.");
+    println!("Edit the filenames at your leisure, then close the editor and bulkrn");
+    println!("will rename the files correspondingly.");
     println!("");
 }
 

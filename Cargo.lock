@@ -47,7 +47,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "brn"
+name = "bulkrn"
 version = "0.1.0"
 dependencies = [
  "colored",

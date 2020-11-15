@@ -1,5 +1,5 @@
 [package]
-name = "brn"
+name = "bulkrn"
 version = "0.1.0"
 authors = ["Chris Burt-Brown <brokenbeta@gmail.com>"]
 edition = "2018"
