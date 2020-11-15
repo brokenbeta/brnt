@@ -260,14 +260,14 @@ fn list_files(args: &Arguments) -> Vec<FileToRename>
     {
         0 => filenames,
         1 => die!(
-            "Unable to create glob from argument #{}.", invalid_indices[0]
+            "Unable to create search pattern from argument #{}.", invalid_indices[0]
         ),
         _ => {
             let string_indices: Vec<String> =
                 invalid_indices.iter().map(|n| format!("#{}", n)).collect();
             let (last, rest) = string_indices.split_last().unwrap();
             die!(
-                "Unable to create glob from arguments {} and {}.",
+                "Unable to create search pattern from arguments {} and {}.",
                 rest.join(", "),
                 last
             )
@@ -281,11 +281,11 @@ fn handle_degenerate_cases(args: &Arguments, files: &Vec<FileToRename>)
     {
         if args.patterns.len() == 1
         {
-            println!("No files matched glob.");
+            println!("No files matched pattern.");
         }
         else
         {
-            println!("No files matched any of those globs.");
+            println!("No files matched any patterns.");
         }
         exit(0);
     }
