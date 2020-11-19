@@ -300,12 +300,15 @@ fn write_filenames_to_buffer(buffer_filename: &Path, files: &Vec<FileToRename>)
     };
     let mut writer = LineWriter::new(buffer_file);
 
-    for file in files
+    for n in 0..files.len()
     {
+        let file = &files[n];
         let filename_before = file.filename_before.to_str().unwrap_or_else(
             || die!("Unable to get string for filename.")
         );
-        write!(&mut writer, "{}\n", filename_before).unwrap_or_else(
+        // let newline = if n < files.len() - 1 { "\n" } else { "" };
+        let newline = "\n";
+        write!(&mut writer, "{}{}", filename_before, newline).unwrap_or_else(
             |_| die!("Unable to write filenames to buffer file.")
         );
     }
