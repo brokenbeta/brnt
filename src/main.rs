@@ -468,6 +468,15 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
     {
         file.full_path.with_file_name(new_filename_for_file(file))
     };
+    fn rename_file_if_safe(p: &Path, q: &Path) -> Result<(), ()>
+    {
+        if q.exists() { return Err(()) };
+        match fs::rename(p, q)
+        {
+            Ok(_) => Ok(()),
+            Err(_) => Err(())
+        }
+    }
 
     if args.dry_run == true
     {
@@ -493,7 +502,7 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
             continue;
         }
 
-        match fs::rename(&file.full_path, new_path)
+        match rename_file_if_safe(&file.full_path, &new_path)
         {
             Ok(_) => {
                 file.outcome = FileOutcome::Renamed;
@@ -522,7 +531,7 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
             if file.outcome != FileOutcome::Renamed { index += 1; continue; }
             let new_path = new_path_for_file(file);
 
-            match fs::rename(new_path, &file.full_path)
+            match rename_file_if_safe(&new_path, &file.full_path)
             {
                 Ok(_) => {
                     file.outcome = FileOutcome::Unchanged;
