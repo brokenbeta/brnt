@@ -41,7 +41,8 @@ enum FileOutcome
 
 struct FileToRename
 {
-    full_path: PathBuf,
+    full_path_before: PathBuf,
+    full_path_after: PathBuf,
     filename_before: OsString,
     filename_after: OsString,
     outcome: FileOutcome
@@ -98,7 +99,7 @@ fn main()
     let buffer_filename = std::env::temp_dir().join(".brnt_buffer");
     write_filenames_to_buffer(&buffer_filename, &files);
     invoke_editor(&config, &args, &buffer_filename);
-    read_filenames_from_buffer(&buffer_filename, &mut files);
+    read_filenames_from_buffer(&buffer_filename, &mut files, &args);
 
     execute_rename(&args, &mut files);
     print_state(&files);
@@ -248,7 +249,8 @@ fn list_files(args: &Arguments) -> Vec<FileToRename>
 
             filenames.push(FileToRename
             {
-                full_path: path.to_owned(),
+                full_path_before: path.to_owned(),
+                full_path_after: PathBuf::new(),
                 filename_before: relevant_part_of_file_name.to_owned(),
                 filename_after: OsString::new(),
                 outcome: FileOutcome::Unchanged
@@ -335,7 +337,9 @@ fn invoke_editor(config: &Config, args: &Arguments, buffer_filename: &Path)
     }
 }
 
-fn read_filenames_from_buffer(buffer_filename: &Path, files: &mut Vec<FileToRename>)
+fn read_filenames_from_buffer(
+    buffer_filename: &Path, files: &mut Vec<FileToRename>, args: &Arguments
+)
 {
     let buffer_file = File::open(buffer_filename).unwrap_or_else(
         |_| die!("Unable to open buffer file for reading.")
@@ -378,17 +382,49 @@ fn read_filenames_from_buffer(buffer_filename: &Path, files: &mut Vec<FileToRena
         );
     }
 
+    let new_filename_for_file = |file: &FileToRename| -> OsString
+    {
+        if args.include_extensions == true
+        {
+            file.filename_after.to_owned()
+        }
+        else
+        {
+            let extension = file.full_path_before.extension();
+            let mut new_name = file.filename_after.to_owned();
+            if let Some(e) = extension
+            {
+                new_name.push(".");
+                new_name.push(e);
+            }
+            new_name
+        }
+    };
+    let new_path_for_file = |file: &FileToRename| -> PathBuf
+    {
+        file.full_path_before.with_file_name(new_filename_for_file(file))
+    };
+
     for n in 0..files.len()
     {
         files[n].filename_after = filenames_coming_in[n].to_owned();
+        files[n].full_path_after = new_path_for_file(&files[n]);
     }
 }
 
 fn ask_what_to_do_when_stuck(stuck_at_file: &FileToRename) -> ActionWhenStuck
 {
-    let friendly_name = &stuck_at_file.full_path.file_name().unwrap().to_str().unwrap();
+    let friendly_name_before =
+        &stuck_at_file.full_path_before.file_name().unwrap().to_str().unwrap();
+    let friendly_name_after =
+        &stuck_at_file.full_path_after.file_name().unwrap().to_str().unwrap();
 
-    println!("{} Can't rename '{}'.", "HALT. ".yellow(), friendly_name.yellow());
+    println!(
+        "{} Can't rename '{}' -> '{}'.",
+        "HALT. ".yellow(),
+        friendly_name_before.yellow(),
+        friendly_name_after.yellow()
+    );
     println!("       {}{}", "r".bright_cyan(), ": Retry".cyan());
     println!("       {}{}", "s".bright_cyan(), ": Skip this file".cyan());
     println!("       {}{}", "a".bright_cyan(), ": Abort here".cyan());
@@ -418,9 +454,17 @@ fn ask_what_to_do_when_stuck_rolling_back(
     stuck_at_file: &FileToRename
 ) -> ActionWhenStuckRollingBack
 {
-    let friendly_name = &stuck_at_file.full_path.file_name().unwrap().to_str().unwrap();
+    let friendly_name_before =
+        &stuck_at_file.full_path_before.file_name().unwrap().to_str().unwrap();
+    let friendly_name_after =
+        &stuck_at_file.full_path_after.file_name().unwrap().to_str().unwrap();
     
-    println!("{} Can't undo rename '{}'.", "HALT. ".yellow(), friendly_name.yellow());
+    println!(
+        "{} Can't undo rename '{}' back to '{}'.",
+        "HALT. ".yellow(),
+        friendly_name_after.yellow(),
+        friendly_name_before.yellow()
+    );
     println!("       {}{}", "r".bright_cyan(), ": Retry".cyan());
     println!("       {}{}", "s".bright_cyan(), ": Skip this file".cyan());
     println!("       {}{}", "a".bright_cyan(), ": Abort here".cyan());
@@ -446,28 +490,6 @@ fn ask_what_to_do_when_stuck_rolling_back(
 
 fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
 {
-    let new_filename_for_file = |file: &FileToRename| -> OsString
-    {
-        if args.include_extensions == true
-        {
-            file.filename_after.to_owned()
-        }
-        else
-        {
-            let extension = file.full_path.extension();
-            let mut new_name = file.filename_after.to_owned();
-            if let Some(e) = extension
-            {
-                new_name.push(".");
-                new_name.push(e);
-            }
-            new_name
-        }
-    };
-    let new_path_for_file = |file: &FileToRename| -> PathBuf
-    {
-        file.full_path.with_file_name(new_filename_for_file(file))
-    };
     fn rename_file_if_safe(p: &Path, q: &Path) -> Result<(), ()>
     {
         if q.exists() { return Err(()) };
@@ -482,8 +504,11 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
     {
         for file in files
         {
-            let new_path = new_path_for_file(&file);
-            println!("{} -> {}", file.full_path.display(), new_path.display());
+            println!(
+                "{} -> {}",
+                file.full_path_before.display(),
+                file.full_path_after.display()
+            );
         }
         exit(0);
     }
@@ -493,16 +518,15 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
     while index < files.len()
     {
         let mut file = &mut files[index];
-        let new_path = new_path_for_file(file);
 
-        if new_path == file.full_path
+        if file.full_path_after == file.full_path_before
         {
             file.outcome = FileOutcome::RenameWasNoop;
             index += 1;
             continue;
         }
 
-        match rename_file_if_safe(&file.full_path, &new_path)
+        match rename_file_if_safe(&file.full_path_before, &file.full_path_after)
         {
             Ok(_) => {
                 file.outcome = FileOutcome::Renamed;
@@ -529,9 +553,8 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>)
         {
             let mut file = &mut files[index];
             if file.outcome != FileOutcome::Renamed { index += 1; continue; }
-            let new_path = new_path_for_file(file);
 
-            match rename_file_if_safe(&new_path, &file.full_path)
+            match rename_file_if_safe(&file.full_path_after, &file.full_path_before)
             {
                 Ok(_) => {
                     file.outcome = FileOutcome::Unchanged;
