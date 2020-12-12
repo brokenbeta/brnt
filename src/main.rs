@@ -173,6 +173,7 @@ fn parse_arguments() -> Arguments
         {
             match arg.as_str()
             {
+                "-e" => next_is_editor_executable = true,
                 "-x" => result.include_extensions = true,
                 _ => die!("Don't understand option {}.", arg)
             }
