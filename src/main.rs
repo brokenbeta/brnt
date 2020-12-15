@@ -1,6 +1,9 @@
+mod action_history;
+
 use colored::*;
 use confy;
 use glob;
+use action_history::{ActionHistory, ChangeList};
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::env;
@@ -466,6 +469,7 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>) {
 
     let mut index = 0;
     let mut rollback = false;
+    let mut change_list = ChangeList::new();
     while index < files.len() {
         let mut file = &mut files[index];
 
@@ -479,6 +483,7 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>) {
             Ok(_) => {
                 file.outcome = FileOutcome::Renamed;
                 index += 1;
+                change_list.push(&file.full_path_before, &file.full_path_after);
             }
             Err(_) => match ask_what_to_do_when_stuck(&file) {
                 ActionWhenStuck::Retry => continue,
@@ -522,6 +527,8 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>) {
                 }
             }
         }
+    } else {
+        ActionHistory::write(change_list, ".history.json");
     }
 }
 

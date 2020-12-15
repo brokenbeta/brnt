@@ -4,14 +4,14 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Change {
     from: String,
-    to: String,
+    to:   String
 }
 
 pub struct ChangeList {
-    list: Vec<Change>,
+    list: Vec<Change>
 }
 
 impl ChangeList {
@@ -22,21 +22,24 @@ impl ChangeList {
     pub fn push(&mut self, from: &PathBuf, to: &PathBuf) {
         let from: String = String::from(from.to_str().unwrap());
         let to: String = String::from(to.to_str().unwrap());
-        self.list.push(Change { from: from, to: to });
+        self.list.push(Change {
+            from: from,
+            to:   to
+        });
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ActionHistory {
-    changes: Vec<Vec<Change>>,
-    file_name: String,
+    changes:   Vec<Vec<Change>>,
+    file_name: String
 }
 
 impl ActionHistory {
     fn from_history(file_name: &str) -> Option<Self> {
         if let Ok(content) = fs::read(file_name) {
-            let json_data =
-                String::from_utf8(content).expect("Failed to read utf8 from history file");
+            let json_data = String::from_utf8(content)
+                .expect("Failed to read utf8 from history file");
             let mut action_history: ActionHistory = serde_json::from_str(&json_data)
                 .expect("Failed to deserialize to ActionHistory from file.");
             action_history.file_name = String::from(file_name);
@@ -50,8 +53,8 @@ impl ActionHistory {
             return action_history;
         }
         Self {
-            changes: Vec::new(),
-            file_name: String::from(file_name),
+            changes:   Vec::new(),
+            file_name: String::from(file_name)
         }
     }
 
@@ -93,7 +96,6 @@ mod test {
         test_write_history_to_file();
 
         let action_history = ActionHistory::new(TEST_FILE_NAME);
-        println!("{:?}", action_history);
         assert_eq!(action_history.changes.len(), 1);
         assert_eq!(action_history.changes[0].len(), 2);
     }
