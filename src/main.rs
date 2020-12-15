@@ -1,9 +1,9 @@
 mod action_history;
 
+use action_history::{ActionHistory, ChangeList};
 use colored::*;
 use confy;
 use glob;
-use action_history::{ActionHistory, ChangeList};
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::env;
