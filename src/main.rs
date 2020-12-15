@@ -1,5 +1,3 @@
-mod action_history;
-
 use colored::*;
 use confy;
 use glob;
@@ -12,42 +10,40 @@ use std::io::{BufRead, BufReader, LineWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
 
-use action_history::{ActionHistory, ChangeList};
-
 #[derive(Serialize, Deserialize)]
 struct Config {
-    editor_executable: String,
+    editor_executable: String
 }
 impl Default for Config {
     fn default() -> Config {
         Config {
-            editor_executable: "vim".to_owned(),
+            editor_executable: "vim".to_owned()
         }
     }
 }
 
 struct Arguments {
-    patterns: Vec<String>,
-    editor_executable: Option<String>,
+    patterns:              Vec<String>,
+    editor_executable:     Option<String>,
     set_editor_executable: Option<String>,
-    include_extensions: bool,
-    dry_run: bool,
-    usage: bool,
+    include_extensions:    bool,
+    dry_run:               bool,
+    usage:                 bool
 }
 
 #[derive(PartialEq)]
 enum FileOutcome {
     Renamed,
     RenameWasNoop,
-    Unchanged,
+    Unchanged
 }
 
 struct FileToRename {
     full_path_before: PathBuf,
-    full_path_after: PathBuf,
-    filename_before: OsString,
-    filename_after: OsString,
-    outcome: FileOutcome,
+    full_path_after:  PathBuf,
+    filename_before:  OsString,
+    filename_after:   OsString,
+    outcome:          FileOutcome
 }
 
 #[derive(PartialEq)]
@@ -55,14 +51,14 @@ enum ActionWhenStuck {
     Retry,
     Skip,
     Abort,
-    Rollback,
+    Rollback
 }
 
 #[derive(PartialEq)]
 enum ActionWhenStuckRollingBack {
     Retry,
     Skip,
-    AbortRollback,
+    AbortRollback
 }
 
 macro_rules! die
@@ -83,7 +79,8 @@ fn main() {
     }
     if let Some(x) = &args.set_editor_executable {
         config.editor_executable = x.to_owned();
-        confy::store("brnt", &config).unwrap_or_else(|_| die!("Unable to save config file."));
+        confy::store("brnt", &config)
+            .unwrap_or_else(|_| die!("Unable to save config file."));
         println!("Editor set to '{}'.", config.editor_executable);
         exit(0);
     }
@@ -123,12 +120,12 @@ fn print_usage() {
 
 fn parse_arguments() -> Arguments {
     let mut result = Arguments {
-        patterns: Vec::new(),
-        editor_executable: None,
+        patterns:              Vec::new(),
+        editor_executable:     None,
         set_editor_executable: None,
-        include_extensions: false,
-        dry_run: false,
-        usage: false,
+        include_extensions:    false,
+        dry_run:               false,
+        usage:                 false
     };
     let mut force_patterns = false;
     let mut next_is_editor_executable = false;
@@ -151,12 +148,13 @@ fn parse_arguments() -> Arguments {
                 "--include-extensions" => result.include_extensions = true,
                 "--dry-run" => result.dry_run = true,
                 "--" => force_patterns = true,
-                _ => die!("Don't understand option {}.", arg),
+                _ => die!("Don't understand option {}.", arg)
             }
         } else if arg.starts_with("-") == true && force_patterns == false {
             match arg.as_str() {
+                "-e" => next_is_editor_executable = true,
                 "-x" => result.include_extensions = true,
-                _ => die!("Don't understand option {}.", arg),
+                _ => die!("Don't understand option {}.", arg)
             }
         } else {
             result.patterns.push(arg);
@@ -217,10 +215,10 @@ fn list_files(args: &Arguments) -> Vec<FileToRename> {
 
             filenames.push(FileToRename {
                 full_path_before: path.to_owned(),
-                full_path_after: PathBuf::new(),
-                filename_before: relevant_part_of_file_name.to_owned(),
-                filename_after: OsString::new(),
-                outcome: FileOutcome::Unchanged,
+                full_path_after:  PathBuf::new(),
+                filename_before:  relevant_part_of_file_name.to_owned(),
+                filename_after:   OsString::new(),
+                outcome:          FileOutcome::Unchanged
             });
         }
     }
@@ -258,7 +256,7 @@ fn handle_degenerate_cases(args: &Arguments, files: &Vec<FileToRename>) {
 fn write_filenames_to_buffer(buffer_filename: &Path, files: &Vec<FileToRename>) {
     let buffer_file = match File::create(&buffer_filename) {
         Ok(file) => file,
-        Err(_) => die!("Unable to open buffer file for writing."),
+        Err(_) => die!("Unable to open buffer file for writing.")
     };
     let mut writer = LineWriter::new(buffer_file);
 
@@ -278,7 +276,7 @@ fn write_filenames_to_buffer(buffer_filename: &Path, files: &Vec<FileToRename>) 
 fn invoke_editor(config: &Config, args: &Arguments, buffer_filename: &Path) {
     let editor: &str = match &args.editor_executable {
         Some(e) => &e,
-        None => &config.editor_executable,
+        None => &config.editor_executable
     };
 
     let status = Command::new(editor)
@@ -294,7 +292,7 @@ fn invoke_editor(config: &Config, args: &Arguments, buffer_filename: &Path) {
 fn read_filenames_from_buffer(
     buffer_filename: &Path,
     files: &mut Vec<FileToRename>,
-    args: &Arguments,
+    args: &Arguments
 ) {
     let buffer_file = File::open(buffer_filename)
         .unwrap_or_else(|_| die!("Unable to open buffer file for reading."));
@@ -392,7 +390,7 @@ fn ask_what_to_do_when_stuck(stuck_at_file: &FileToRename) -> ActionWhenStuck {
             Ok(b's') | Ok(b'S') => Some(ActionWhenStuck::Skip),
             Ok(b'a') | Ok(b'A') => Some(ActionWhenStuck::Abort),
             Ok(b'u') | Ok(b'U') => Some(ActionWhenStuck::Rollback),
-            _ => None,
+            _ => None
         };
     }
     println!("{}", key);
@@ -400,7 +398,7 @@ fn ask_what_to_do_when_stuck(stuck_at_file: &FileToRename) -> ActionWhenStuck {
 }
 
 fn ask_what_to_do_when_stuck_rolling_back(
-    stuck_at_file: &FileToRename,
+    stuck_at_file: &FileToRename
 ) -> ActionWhenStuckRollingBack {
     let friendly_name_before = &stuck_at_file
         .full_path_before
@@ -437,7 +435,7 @@ fn ask_what_to_do_when_stuck_rolling_back(
             Ok(b'r') | Ok(b'R') => Some(ActionWhenStuckRollingBack::Retry),
             Ok(b's') | Ok(b'S') => Some(ActionWhenStuckRollingBack::Skip),
             Ok(b'a') | Ok(b'A') => Some(ActionWhenStuckRollingBack::AbortRollback),
-            _ => None,
+            _ => None
         };
     }
     println!("{}", key);
@@ -449,10 +447,9 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>) {
         if q.exists() {
             return Err(());
         };
-
         match fs::rename(p, q) {
             Ok(_) => Ok(()),
-            Err(_) => Err(()),
+            Err(_) => Err(())
         }
     }
 
@@ -469,9 +466,6 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>) {
 
     let mut index = 0;
     let mut rollback = false;
-    // Change List handler contains change action history.
-    // EX: Change {from: "from_file.txt", to: to_file.txt}
-    let mut change_list = ChangeList::new();
     while index < files.len() {
         let mut file = &mut files[index];
 
@@ -485,7 +479,6 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>) {
             Ok(_) => {
                 file.outcome = FileOutcome::Renamed;
                 index += 1;
-                change_list.push(&file.full_path_before, &file.full_path_after);
             }
             Err(_) => match ask_what_to_do_when_stuck(&file) {
                 ActionWhenStuck::Retry => continue,
@@ -498,7 +491,7 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>) {
                     rollback = true;
                     break;
                 }
-            },
+            }
         }
     }
 
@@ -526,12 +519,9 @@ fn execute_rename(args: &Arguments, files: &mut Vec<FileToRename>) {
                         index += 1;
                         continue;
                     }
-                },
+                }
             }
         }
-    } else {
-        // Write/Append all the changes to a json file.
-        ActionHistory::write(change_list, ".history.json");
     }
 }
 
@@ -544,7 +534,7 @@ fn print_state(files: &Vec<FileToRename>) {
         match f.outcome {
             FileOutcome::Renamed => renamed += 1,
             FileOutcome::RenameWasNoop => noop += 1,
-            FileOutcome::Unchanged => unchanged += 1,
+            FileOutcome::Unchanged => unchanged += 1
         }
     }
 
