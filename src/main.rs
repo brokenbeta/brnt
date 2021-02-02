@@ -77,6 +77,13 @@ fn main() {
         print_usage();
         exit(0);
     }
+    if let Some(exe) = env::var_os("EDITOR") {
+        if let Some(exe) = exe.to_str() {
+            config.editor_executable = exe.to_owned();
+        } else {
+            die!("Environment EDITOR configuration non-unicode and can't be used.");
+        }
+    }
     if let Some(x) = &args.set_editor_executable {
         config.editor_executable = x.to_owned();
         confy::store("brnt", &config)
